@@ -1,0 +1,7 @@
+/out/
+/release/
+.vs/
+*.user
+*.suo
+*.pdb
+
