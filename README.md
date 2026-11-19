@@ -1,16 +1,50 @@
 # XGClock Studio
 
-An independent Windows desktop controller for the XG-IN1406M v3 family of six-tube Nixie clocks. The portable executable includes the glass-tube artwork, an English interface, and a direct implementation of the clock protocol. It runs locally and starts in preview mode.
+**[Download XGClock Studio for Windows (ZIP)](https://github.com/Frozt-src/Open-Nixie-Studio/releases/latest/download/XGClock-Studio-Windows.zip)**
 
-## Run
+Extract the ZIP and open **NixieStudio.exe**. Studio controls XG-IN1406M v3 Nixie clocks and starts in preview mode. It runs on Windows 10 version 1703 or later, or Windows 11, with .NET Framework 4.8 or later.
 
-Extract the Windows ZIP and open **NixieStudio.exe** on Windows 10 version 1703 or later, or Windows 11, with .NET Framework 4.8 or later. No installer, account, network service, or vendor application is required. A USB-to-serial driver may be needed if Windows does not list the clock as a COM port.
+## Connect over Bluetooth LE
+
+1. Power on the clock and turn on Bluetooth in Windows. You’ll need a Bluetooth LE adapter, either built in or connected by USB.
+2. In Studio’s **Overview**, open **Choose port** in the **Connection** card and select **Find a Bluetooth clock…**.
+3. Select your clock (for example, **XG-IN1406Mv3.0**) and click **Connect**. If the list stays empty, bring the clock closer and disconnect any other Bluetooth client using it.
+4. Wait for **Clock settings received** at the bottom of the window. The connection should show **Bluetooth LE**. Use **Read settings** to refresh the values later.
+
+Studio uses the Windows Bluetooth LE stack and the clock’s FFF1/FFF2 characteristics. The Bluetooth address stays in memory.
+
+## Screenshots
+
+![Clock Overview in preview mode, showing six Nixie tubes, brightness controls and the connection card](docs/screenshots/overview.png)
+
+<details>
+<summary>View Display, Sound, Alarms &amp; Schedules, and Device</summary>
+
+**Display**
+
+![Tube display, brightness, RGB backlight and custom digit controls](docs/screenshots/display.png)
+
+**Sound**
+
+![Volume, ringtone, button tones, voice and chime settings](docs/screenshots/sound.png)
+
+**Alarms & Schedules**
+
+![Two alarms, power scheduling, motion timeout and countdown settings](docs/screenshots/alarms-and-schedules.png)
+
+**Device**
+
+![Clock maintenance, power and tube test controls](docs/screenshots/device.png)
+
+</details>
+
+## Connect over USB
+
+If Windows does not list the clock as a COM port, it may need a USB-to-serial driver.
 
 1. Connect the clock with a USB data cable. Close any other controller using that port.
 2. Open **Serial port** and select the clock's port. Studio opens it at 115200 baud, 8 data bits, no parity and one stop bit.
 3. Wait for **Clock settings received**. **Read settings** refreshes device state. Use **Sync from Computer** only when you intend to set the clock's local date and time.
-
-For Bluetooth LE, choose **Find a Bluetooth clock** from the port menu. Select the advertised XG clock. This path uses the Windows Bluetooth LE stack and the clock's FFF1/FFF2 characteristics. It requires a BLE-capable Windows adapter. Compatibility with a particular adapter and firmware depends on a successful settings read. The Bluetooth device address stays in memory.
 
 Hardware verification on November 18, 2026 completed a full settings read over both USB and Bluetooth LE. On USB the controller also wrote the existing hour format and independently read it back. Individual effects, alarms, factory reset and the full range of firmware settings have not all been exercised with this build.
 
