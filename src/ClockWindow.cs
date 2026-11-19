@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
@@ -18,13 +18,14 @@ static class Program
 sealed class ClockWindow : Form
 {
     readonly ClockEngine clock;
-    readonly Panel host=new Panel { BackColor=Theme.Back, AutoScroll=true };
+    readonly SettingsViewport host=new SettingsViewport();
     readonly List<Action> bindings=new List<Action>();
     readonly Timer timer=new Timer { Interval=50 };
     readonly StudioSurface surface;
     readonly Font heading=new Font("Segoe UI Semibold",14);
     string page="Overview";
-    TableLayoutPanel grid;
+    Panel grid;
+    bool arranging;
     int ticks;
     public ClockWindow(ClockEngine engine)
     {
@@ -36,6 +37,8 @@ sealed class ClockWindow : Form
         ClientSize=new Size((int)(1497*scale),(int)(966*scale));
         surface=new StudioSurface(this,clock,host,ShowPage);
         Controls.Add(surface);
+        host.SizeChanged+=delegate { ArrangeCards(); };
+        UpdateWindowShape();
         timer.Tick+=delegate {
             clock.Poll();
             if(++ticks%4==0) { foreach(Action bind in bindings) bind(); surface.UpdateView(page,null); }
@@ -48,6 +51,20 @@ sealed class ClockWindow : Form
             }
         };
     }
+    protected override void OnSizeChanged(EventArgs e)
+    {
+        base.OnSizeChanged(e);
+        UpdateWindowShape();
+    }
+    void UpdateWindowShape()
+    {
+        if(ClientSize.Width<10||ClientSize.Height<10)return;
+        var old=Region;
+        if(WindowState==FormWindowState.Maximized) Region=null;
+        else using(var path=Theme.Round(new RectangleF(0,0,ClientSize.Width,ClientSize.Height),
+                        18*Math.Min(ClientSize.Width/1497f,ClientSize.Height/966f))) Region=new Region(path);
+        if(old!=null)old.Dispose();
+    }
     protected override void Dispose(bool disposing)
     {
         if(disposing) { timer.Dispose(); heading.Dispose(); }
@@ -57,8 +74,7 @@ sealed class ClockWindow : Form
     {
         page=next; bindings.Clear(); host.SuspendLayout();
         if(grid!=null) grid.Dispose();
-        grid=new TableLayoutPanel { Dock=DockStyle.Top,AutoSize=true,ColumnCount=2,BackColor=Theme.Back };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50)); grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
+        grid=new Panel { Location=Point.Empty,BackColor=Theme.Back,Margin=Padding.Empty };
         host.Controls.Add(grid);
         switch(page)
         {
@@ -77,8 +93,8 @@ sealed class ClockWindow : Form
                 }),Toggle("Custom display enabled",11));
                 break;
             case "Sound":
-                Group("Sound & chimes",Number("Volume",13,2,0,10),Number("Ringtone",13,1,1,6),
-                      Toggle("Button tones",13),Toggle("Hourly chime",16),Toggle("English voice",15));
+                Group("Clock sound",Number("Volume",13,2,0,10),Number("Ringtone",13,1,1,6),Toggle("Button tones",13));
+                Group("Voice & chimes",Toggle("Hourly chime",16),Toggle("English voice",15));
                 break;
             case "Alarms & schedules":
                 Group("Alarms",Hour("Alarm 1",4),Toggle("Alarm 1 enabled",4),Hour("Alarm 2",5),Toggle("Alarm 2 enabled",5));
@@ -106,22 +122,70 @@ sealed class ClockWindow : Form
                 break;
         }
         host.ResumeLayout(true);
+        ArrangeCards();
         foreach(Action bind in bindings) bind();
     }
+    static readonly Dictionary<string,string> Glyphs=new Dictionary<string,string> {
+            {"Tube display","\uE7F4"},{"Brightness","\uE706"},{"RGB backlight","\uE790"},{"Custom display","\uECA5"},
+            {"Clock sound","\uE767"},{"Voice & chimes","\uEA8F"},{"Alarms","\uE916"},{"Power schedule","\uE787"},
+            {"Motion auto-off","\uE81D"},{"Anniversary & countdown","\uE823"},{"Clock maintenance","\uE90F"},{"Tube test mode controls","\uE9D9"}
+        };
     void Group(string name,params Control[] rows)
     {
-        var body=new TableLayoutPanel { AutoSize=true,Dock=DockStyle.Top,ColumnCount=1,Padding=new Padding(14),Margin=new Padding(5),BackColor=Theme.Surface };
-        body.Controls.Add(new Label { Text=name,Font=heading,AutoSize=true,Margin=new Padding(2,2,2,12),ForeColor=Theme.Text });
-        foreach(var row in rows) body.Controls.Add(row);
+        var body=new SettingsCard { Dock=DockStyle.None,RowCount=rows.Length+2 };
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
+        body.RowStyles.Add(new RowStyle(SizeType.Absolute,49));
+        body.Controls.Add(new GroupTitle(name,Glyphs[name],heading),0,0);
+        foreach(var row in rows) {
+            int index=body.RowStyles.Count;
+            body.RowStyles.Add(new RowStyle(SizeType.Absolute,47));
+            body.Controls.Add(row,0,index);
+        }
+        body.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+        body.Controls.Add(new Panel { Margin=Padding.Empty,Dock=DockStyle.Fill,BackColor=StudioStyle.Paper },0,rows.Length+1);
+        body.Tag=83+rows.Length*47;
         grid.Controls.Add(body);
     }
-    Control ActionRow(string label,string caption,Action action,Func<string> current=null)
+    void ArrangeCards()
     {
-        var row=new TableLayoutPanel { Dock=DockStyle.Top,Height=46,ColumnCount=2,Margin=new Padding(0) };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,55)); row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,45));
-        row.Controls.Add(new Label { Text=label,Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,ForeColor=Theme.Muted });
-        var b=new Pill(caption) { Dock=DockStyle.Fill,Margin=new Padding(0,3,0,3),AccessibleDescription=label,Emphasis=false };
+        if(arranging||grid==null||grid.IsDisposed||host.ClientSize.Width<60)return;
+        arranging=true;
+        try {
+            const int gap=16;
+            int available=host.ClientSize.Width;
+            int columns=available>=760?2:1;
+            int height=0;
+            for(int i=0;i<grid.Controls.Count;i+=columns) {
+                int h=(int)grid.Controls[i].Tag;
+                if(columns==2 && i+1<grid.Controls.Count)h=Math.Max(h,(int)grid.Controls[i+1].Tag);
+                height+=h+gap;
+            }
+            height=Math.Max(0,height-gap);
+            int width=available-(height>host.ClientSize.Height?16:0);
+            int col=(width-gap*(columns-1))/columns;
+            int y=0;
+            for(int i=0;i<grid.Controls.Count;i+=columns) {
+                int h=(int)grid.Controls[i].Tag;
+                if(columns==2 && i+1<grid.Controls.Count)h=Math.Max(h,(int)grid.Controls[i+1].Tag);
+                for(int j=0;j<columns&&i+j<grid.Controls.Count;j++)
+                    grid.Controls[i+j].Bounds=new Rectangle(j*(col+gap),y,j==0?col:width-col-gap,h);
+                y+=h+gap;
+            }
+            host.Fit(grid,width,height);
+        } finally { arranging=false; }
+    }
+    Control ActionRow(string label,string caption,Action action,Func<string> current=null,bool toggle=false)
+    {
+        var row=new TableLayoutPanel { Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty,BackColor=StudioStyle.Paper };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,toggle?62:150));
+        row.Paint+=delegate(object sender,PaintEventArgs e) {
+            using(var pen=new Pen(Color.FromArgb(229,234,231))) e.Graphics.DrawLine(pen,0,0,row.Width,0);
+        };
+        row.Controls.Add(new Label { Text=label,Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,ForeColor=Theme.Text,Margin=new Padding(0,1,0,0),Font=StudioStyle.RowFont,UseMnemonic=false });
+        var b=new Pill(caption) { Dock=DockStyle.Fill,Margin=new Padding(0,6,0,6),AccessibleDescription=label,IsSwitch=toggle };
         row.Controls.Add(b);
+        b.Enter+=delegate { host.Reveal(b); };
         b.Click+=delegate {
             try { if(clock.Ready) action(); }
             catch(Exception e) { MessageBox.Show(this,e.GetBaseException().Message,label,MessageBoxButtons.OK,MessageBoxIcon.Information); }
@@ -139,7 +203,7 @@ sealed class ClockWindow : Form
     {
         return ActionRow(label,"Unknown",delegate { clock.Toggle(command); },delegate {
             bool? on=clock.SwitchState(command); return on.HasValue ? (on.Value?"On":"Off") : "Unknown";
-        });
+        },true);
     }
     Control Choice(string label,int command,params string[] choices)
     {
@@ -173,13 +237,13 @@ sealed class ClockWindow : Form
     bool Edit(string title,params Control[] controls)
     {
         using(var form=new Form { Text=title,StartPosition=FormStartPosition.CenterParent,Font=Font,FormBorderStyle=FormBorderStyle.FixedDialog,
-            MaximizeBox=false,MinimizeBox=false,ClientSize=new Size(390,68+controls.Length*38) })
+            MaximizeBox=false,MinimizeBox=false,ShowInTaskbar=false,BackColor=StudioStyle.Paper,ClientSize=new Size(422,90+controls.Length*39) })
         {
-            var panel=new FlowLayoutPanel { Dock=DockStyle.Fill,Padding=new Padding(14),FlowDirection=FlowDirection.TopDown,WrapContents=false };
-            foreach(var c in controls) { c.Width=345; panel.Controls.Add(c); }
-            var actions=new FlowLayoutPanel { AutoSize=true };
-            var ok=new Button { Text="Apply",DialogResult=DialogResult.OK };
-            var cancel=new Button { Text="Cancel",DialogResult=DialogResult.Cancel };
+            var panel=new FlowLayoutPanel { Dock=DockStyle.Fill,Padding=new Padding(22,18,22,14),FlowDirection=FlowDirection.TopDown,WrapContents=false };
+            foreach(var c in controls) { c.Width=372; c.Margin=new Padding(0,2,0,8); panel.Controls.Add(c); }
+            var actions=new FlowLayoutPanel { Width=372,Height=40,Margin=new Padding(0,6,0,0),FlowDirection=FlowDirection.RightToLeft };
+            var ok=new Pill("Apply") { Width=90,Height=34,Emphasis=true,DialogResult=DialogResult.OK };
+            var cancel=new Pill("Cancel") { Width=90,Height=34,DialogResult=DialogResult.Cancel };
             actions.Controls.Add(ok); actions.Controls.Add(cancel); panel.Controls.Add(actions); form.Controls.Add(panel);
             form.AcceptButton=ok; form.CancelButton=cancel;
             return form.ShowDialog(this)==DialogResult.OK;
